@@ -1994,75 +1994,74 @@ namespace lgfx
 
   size_t LGFXBase::write(uint8_t utf8)
   {
-    if (utf8 == '\r') return 1;
+    return write(_text_style.utf8 ? decodeUTF8(utf8) : (uint16_t)utf8);
+  }
+
+  size_t LGFXBase::write(uint16_t utf16)
+  {
+    if (!utf16 || utf16 == '\r') return 1;
     int32_t sy = 65536 * _text_style.size_y;
-    if (utf8 == '\n') {
+    if (utf16 == '\n') {
       _filled_x = (_textscroll) ? this->_sx : 0;
       _cursor_x = _filled_x;
       _cursor_y += (_font_metrics.y_advance * sy) >> 16;
-    } else {
-      uint16_t uniCode = utf8;
-      if (_text_style.utf8) {
-        uniCode = decodeUTF8(utf8);
-        if (uniCode < 0x20) return 1;
-      }
-      //if (!(fpUpdateFontSize)(this, uniCode)) return 1;
-      //if (!_font->updateFontMetric(&_font_metrics, uniCode)) return 1;
-      _font->updateFontMetric(&_font_metrics, uniCode);
+      return 1;
+    }
 
-      int32_t sx = 65536 * _text_style.size_x;
-      int32_t xo = (_font_metrics.x_offset * sx) >> 16;
-      int32_t w  = std::max(xo + ((_font_metrics.width * sx) >> 16), (_font_metrics.x_advance * sx) >> 16);
-      if (_textscroll || _textwrap_x) {
-        int32_t llimit = _textscroll ? this->_sx : this->_clip_l;
-        int32_t rlimit = _textscroll ? this->_sx + this->_sw : (this->_clip_r + 1);
-        if (_cursor_x + w > rlimit) {
-          _filled_x = llimit;
-          _cursor_x = llimit - std::min<int32_t>(0, xo);
-          _cursor_y += (_font_metrics.y_advance * sy) >> 16;
+    _font->updateFontMetric(&_font_metrics, utf16);
+
+    int32_t sx = 65536 * _text_style.size_x;
+    int32_t xo = (_font_metrics.x_offset * sx) >> 16;
+    int32_t w  = std::max(xo + ((_font_metrics.width * sx) >> 16), (_font_metrics.x_advance * sx) >> 16);
+    if (_textscroll || _textwrap_x) {
+      int32_t llimit = _textscroll ? this->_sx : this->_clip_l;
+      int32_t rlimit = _textscroll ? this->_sx + this->_sw : (this->_clip_r + 1);
+      if (_cursor_x + w > rlimit) {
+        _filled_x = llimit;
+        _cursor_x = llimit - std::min<int32_t>(0, xo);
+        _cursor_y += (_font_metrics.y_advance * sy) >> 16;
+      }
+      if (_cursor_x < llimit - xo) _cursor_x = llimit - xo;
+    }
+
+    int32_t h  = (_font_metrics.height * sy) >> 16;
+
+    int32_t ydiff = 0;
+    if (_text_style.datum & middle_left) {          // vertical: middle
+      ydiff -= h >> 1;
+    } else if (_text_style.datum & bottom_left) {   // vertical: bottom
+      ydiff -= h;
+    } else if (_text_style.datum & baseline_left) { // vertical: baseline
+      ydiff -= (_font_metrics.baseline * sy) >> 16;
+    }
+    int32_t y = _cursor_y + ydiff;
+
+    if (_textscroll) {
+      if (y < this->_sy) y = this->_sy;
+      else {
+        int yshift = (this->_sy + this->_sh) - (y + h);
+        if (yshift < 0) {
+          this->scroll(0, yshift);
+          y += yshift;
         }
-        if (_cursor_x < llimit - xo) _cursor_x = llimit - xo;
       }
+    } else if (_textwrap_y) {
+      if (y + h > (this->_clip_b + 1)) {
+        y = this->_clip_t;
+      } else
+      if (y < this->_clip_t) y = this->_clip_t;
+    }
+    _cursor_y = y - ydiff;
+    y -= (_font_metrics.y_offset * sy) >> 16;
 
-      int32_t h  = (_font_metrics.height * sy) >> 16;
-
-      int32_t ydiff = 0;
-      if (_text_style.datum & middle_left) {          // vertical: middle
-        ydiff -= h >> 1;
-      } else if (_text_style.datum & bottom_left) {   // vertical: bottom
-        ydiff -= h;
-      } else if (_text_style.datum & baseline_left) { // vertical: baseline
-        ydiff -= (_font_metrics.baseline * sy) >> 16;
-      }
-      int32_t y = _cursor_y + ydiff;
-
-      if (_textscroll) {
-        if (y < this->_sy) y = this->_sy;
-        else {
-          int yshift = (this->_sy + this->_sh) - (y + h);
-          if (yshift < 0) {
-            this->scroll(0, yshift);
-            y += yshift;
-          }
-        }
-      } else if (_textwrap_y) {
-        if (y + h > (this->_clip_b + 1)) {
-          y = this->_clip_t;
-        } else
-        if (y < this->_clip_t) y = this->_clip_t;
-      }
-      _cursor_y = y - ydiff;
-      y -= (_font_metrics.y_offset * sy) >> 16;
-
-      if (y <= _clip_b + h)
-      {
-        _cursor_x += _font->drawChar(this, _cursor_x, y, uniCode, &_text_style, &_font_metrics, _filled_x);
-      }
-      else
-      {
-        _font->updateFontMetric(&_font_metrics, uniCode);
-        _cursor_x += (_font_metrics.x_advance * sx) >> 16;
-      }
+    if (y <= _clip_b + h)
+    {
+      _cursor_x += _font->drawChar(this, _cursor_x, y, utf16, &_text_style, &_font_metrics, _filled_x);
+    }
+    else
+    {
+      _font->updateFontMetric(&_font_metrics, utf16);
+      _cursor_x += (_font_metrics.x_advance * sx) >> 16;
     }
 
     return 1;
